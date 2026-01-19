@@ -1,0 +1,95 @@
+# Run in elevated Windows PowerShell 5.1
+
+$ErrorActionPreference = 'Stop'
+Write-Host "=== VC++ Redistributable Installer (simple, fixed) ==="
+
+# Admin check
+$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) { throw "Run PowerShell as Administrator." }
+
+# TLS 1.2 for PSGallery
+try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 } catch {}
+
+# NuGet provider (needed for Install-Module)
+if (-not (Get-PackageProvider NuGet -ErrorAction SilentlyContinue)) {
+    Write-Host "[INFO] Installing NuGet provider..."
+    Install-PackageProvider -Name NuGet -Force | Out-Null
+} else {
+    Write-Host "[OK] NuGet provider present."
+}
+
+# Trust PSGallery (avoid prompts)
+try {
+    $repo = Get-PSRepository PSGallery -ErrorAction Stop
+    if ($repo.InstallationPolicy -ne 'Trusted') {
+        Write-Host "[INFO] Trusting PSGallery..."
+        Set-PSRepository PSGallery -InstallationPolicy Trusted
+    }
+} catch {}
+
+# Install/Update VcRedist module
+if (-not (Get-Module -ListAvailable VcRedist)) {
+    Write-Host "[INFO] Installing VcRedist module..."
+    Install-Module VcRedist -Force -AllowClobber
+} else {
+    Write-Host "[OK] VcRedist module present. Trying to update..."
+    try { Update-Module VcRedist -Force } catch { Write-Host "[WARN] Update-Module failed (continuing)." }
+}
+Import-Module VcRedist -Force
+
+# Cache folder
+$cache = "$env:ProgramData\VcRedistCache"
+if (-not (Test-Path $cache)) { New-Item -ItemType Directory -Path $cache -Force | Out-Null }
+
+# Determine valid releases supported by this VcRedist version
+$valid = (Get-Command Get-VcList).Parameters['Release'].Attributes |
+    Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } |
+    Select-Object -First 1 -ExpandProperty ValidValues
+
+Write-Host "[INFO] VcRedist supports: $($valid -join ', ')"
+
+# Use VcRedist for supported releases only:
+# - 2012 + 2013 (legacy)
+# - 14 = unified VC++ 2015–2022 line (covers 2015/2017/2019/2022)
+$wanted = @('2012','2013','14') | Where-Object { $valid -contains $_ }
+
+Write-Host "[INFO] Installing via VcRedist: $($wanted -join ', ') (x86+x64)"
+$vc = Get-VcList -Release $wanted -Architecture x86,x64 | Save-VcRedist -Path $cache
+Install-VcRedist -VcList $vc -Path $cache -Silent
+
+# VC++ 2010 is NOT supported by this VcRedist build, install via winget (if available)
+$winget = Get-Command winget -ErrorAction SilentlyContinue
+if ($winget) {
+    Write-Host "[INFO] Installing VC++ 2010 via winget (x86 + x64)..."
+    winget install -e --id Microsoft.VCRedist.2010.x86 --accept-source-agreements --accept-package-agreements
+    winget install -e --id Microsoft.VCRedist.2010.x64 --accept-source-agreements --accept-package-agreements
+} else {
+    Write-Host "[WARN] winget not found. Install VC++ 2010 SP1 manually:"
+    Write-Host "       - vcredist_x86.exe (VC++ 2010 SP1)"
+    Write-Host "       - vcredist_x64.exe (VC++ 2010 SP1)"
+}
+
+# Quick DLL checks
+Write-Host ""
+Write-Host "=== Quick runtime checks ==="
+$checks = @(
+  "$env:WINDIR\SysWOW64\msvcr100.dll",
+  "$env:WINDIR\SysWOW64\msvcp100.dll",
+  "$env:WINDIR\System32\msvcr100.dll",
+  "$env:WINDIR\System32\msvcp100.dll",
+  "$env:WINDIR\System32\msvcr110.dll",
+  "$env:WINDIR\System32\msvcp110.dll",
+  "$env:WINDIR\System32\msvcr120.dll",
+  "$env:WINDIR\System32\msvcp120.dll",
+  "$env:WINDIR\System32\vcruntime140.dll",
+  "$env:WINDIR\System32\msvcp140.dll"
+)
+foreach ($p in $checks) {
+    "{0}  {1}" -f ($(if (Test-Path $p) {'[OK]'} else {'[MISSING]'})), $p
+}
+
+Write-Host ""
+Write-Host "[DONE] Reboot recommended, then retry DellBIOSProvider:"
+Write-Host "       Set-ExecutionPolicy -Scope Process Bypass -Force"
+Write-Host "       Import-Module DellBIOSProvider -Force -Verbose"

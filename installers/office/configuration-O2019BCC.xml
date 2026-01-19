@@ -1,0 +1,13 @@
+<Configuration>
+  <Add OfficeClientEdition="64" Channel="PerpetualVL2019">
+      <Product ID="ProPlus2019Volume"  PIDKEY="PWBHH-FKN9M-2PGJ2-C3873-4GFXQ">
+         <Language ID="en-us" />
+      </Product>
+      <Product ID="ProofingTools">
+        <Language ID="en-us" />
+      </Product>
+  </Add>
+  <RemoveMSI All="True" />
+  <Display Level="None" AcceptEULA="TRUE" />
+  <Property Name="AUTOACTIVATE" Value="1" />  
+</Configuration>

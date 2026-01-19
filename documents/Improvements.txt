@@ -1,0 +1,3 @@
+1. Automatically connect to Wi-Fi if it is not detect by using the old script.
+2. Use the correct license for Office, instead of the Win edu?
+3. Re-enable Secure Boot. RAID as well?

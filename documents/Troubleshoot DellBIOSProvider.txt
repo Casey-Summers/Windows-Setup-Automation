@@ -1,0 +1,77 @@
+# Run in elevated Windows PowerShell 5.1
+# Purpose: confirm DellBIOSProvider wrapper can load + show the exact Win32 error code if it can't.
+
+$ErrorActionPreference = 'Stop'
+
+Write-Host "=== DellBIOSProvider Load Test ==="
+
+# Find latest module + wrapper path
+$mod = Get-Module -ListAvailable DellBIOSProvider | Sort-Object Version -Descending | Select-Object -First 1
+if (-not $mod) { throw "DellBIOSProvider not found. Install-Module DellBIOSProvider -Force" }
+
+$moduleDir = Split-Path $mod.Path -Parent
+$wrapper   = Join-Path $moduleDir 'DSMBLibWrapper.dll'
+
+Write-Host "[INFO] Module:  $($mod.Name) $($mod.Version)"
+Write-Host "[INFO] Path:    $moduleDir"
+Write-Host "[INFO] Wrapper: $wrapper"
+Write-Host "[INFO] Exists:  $(Test-Path $wrapper)"
+
+# Show signature status (useful for policy blocks)
+try {
+    $sig = Get-AuthenticodeSignature $wrapper
+    Write-Host "[INFO] Signature: $($sig.Status)"
+} catch {
+    Write-Host "[WARN] Could not read signature: $($_.Exception.Message)"
+}
+
+# Define LoadLibrary wrapper (safe to run multiple times)
+$src = @"
+using System;
+using System.Runtime.InteropServices;
+public static class K32 {
+  [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+  public static extern IntPtr LoadLibrary(string lpFileName);
+}
+"@
+
+try {
+    Add-Type -TypeDefinition $src -Language CSharp -ErrorAction Stop | Out-Null
+} catch {
+    # Ignore "already exists" style errors
+}
+
+# Attempt to load the wrapper DLL
+$h = [K32]::LoadLibrary($wrapper)
+if ($h -eq [IntPtr]::Zero) {
+    $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    Write-Host "[FAIL] LoadLibrary failed. Win32Error=$err"
+    Write-Host "       126 = missing dependency"
+    Write-Host "       5   = access denied (AppLocker/WDAC/AV)"
+    Write-Host "       193 = wrong architecture"
+    Write-Host "       87  = invalid parameter (usually bad path)"
+} else {
+    Write-Host "[OK] LoadLibrary succeeded."
+
+    # Now try importing the module/provider and seeing if the PSDrive appears
+    Set-ExecutionPolicy -Scope Process Bypass -Force
+    try {
+        Import-Module DellBIOSProvider -Force -Verbose -ErrorAction Stop
+        $drive = Get-PSDrive -Name DellSmbios -ErrorAction SilentlyContinue
+        if ($drive) {
+            Write-Host "[OK] DellSmbios PSDrive is present."
+            try {
+                $adminSet = (Get-Item DellSmbios:\Security\IsAdminPasswordSet).CurrentValue
+                Write-Host "[OK] IsAdminPasswordSet: $adminSet"
+            } catch {
+                Write-Host "[WARN] Drive exists but could not read IsAdminPasswordSet: $($_.Exception.Message)"
+            }
+        } else {
+            Write-Host "[FAIL] DellSmbios PSDrive not created (provider init failed)."
+        }
+    } catch {
+        Write-Host "[FAIL] Import-Module failed: $($_.Exception.Message)"
+    }
+}
+
+Write-Host "=== Done ==="
