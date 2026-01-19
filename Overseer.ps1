@@ -329,11 +329,11 @@ function Main {
 
         # Elevates Overseer to Administrator
         Invoke-Task `
-            -Command { Add-LocalGroupMember -Group 'Administrators' -Member $env:USERNAME } `
-            -SkipIf { Get-LocalGroupMember -Group 'Administrators' | Where-Object { $_.Name -match "\\$env:USERNAME$" } } `
-            -SkipMessage "User '$env:USERNAME' is already a member of the Administrators group. Skipping." `
-            -StartMessage "Adding user '$env:USERNAME' to the Administrators group..." `
-            -SuccessMessage "User '$env:USERNAME' successfully added to the Administrators group."
+            -Command { Add-LocalGroupMember -Group 'Administrators' -Member $env:ADMIN_NAME } `
+            -SkipIf { Get-LocalGroupMember -Group 'Administrators' | Where-Object { $_.Name -match "\\$($env:ADMIN_NAME)$" } } `
+            -SkipMessage "User '$($env:ADMIN_NAME)' is already a member of the Administrators group. Skipping." `
+            -StartMessage "Adding user '$($env:ADMIN_NAME)' to the Administrators group..." `
+            -SuccessMessage "User '$($env:ADMIN_NAME)' successfully added to the Administrators group."
 
         # Sets Overseer profile password
         Invoke-Task `
