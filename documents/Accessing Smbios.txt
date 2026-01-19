@@ -1,8 +1,7 @@
 1. Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
-2. Import-Module DellBIOSProvider -Force -Verbose
-3. Get-ChildItem DellSmbios:\ -Recurse -ErrorAction SilentlyContinue |
-Where-Object { $_.Name -match 'secure|boot|uefi|csm|legacy|key' } |
-Select-Object Name, PSPath
+2. Find-Module DellBIOSProvider
+2. Install-Module DellBIOSProvider -Force -Verbose
+3. Import-Module DellBIOSProvider -Force -Verbose
 4. cd DellSmbios:\
 5. dir
 6. Select which BIOS category is relevant to you.
@@ -11,6 +10,7 @@ Select-Object Name, PSPath
 
 E.g Enable secure:
 1. cd DellSmbios:\SecureBoot
+2. Check its current status. Used "dir"
 2. Set-Item -Path .\SecureBoot -value 'Enabled' -Password Stud3nt5Ru1e
 3. dir
 OR

@@ -385,7 +385,11 @@ function Main {
         # Import DellBIOSProvider
         Invoke-Task `
             -Command {
-            if (-not (Get-Module DellBIOSProvider)) { Import-Module DellBIOSProvider -ErrorAction Stop } } `
+            if (-not (Get-Module -ListAvailable -Name DellBIOSProvider)) {
+                Find-Module DellBIOSProvider | Out-Null
+                Install-Module DellBIOSProvider -Force -ErrorAction Stop | Out-Null
+            }
+            Import-Module DellBIOSProvider -Force -ErrorAction Stop } `
             -StartMessage "Initialising Dell BIOS provider..." `
             -SuccessMessage "Dell BIOS provider initialised."
 
@@ -406,7 +410,7 @@ function Main {
         Invoke-Task `
             -Command {
             if ([string]::IsNullOrWhiteSpace($env:BIOS_PASSWORD)) { throw 'BIOS_PASSWORD not set.' }
-            Write-Info "Using BIOS: `"$env:BIOS_PASSWORD`"."
+            # Write-Info "Using BIOS: `"$env:BIOS_PASSWORD`"."
             Set-Item `
                 -Path 'DellSmbios:\SecureBoot\SecureBoot' `
                 -Value 'Enabled' `
@@ -513,7 +517,6 @@ function Test-IsOverseer {
         Read-Host "Please ensure the system name matches `"$profileName`" and press Enter to exit..."
         exit 1
     }
-
     Write-Ok "Profile name matches $profileName."
 }
 
@@ -522,6 +525,7 @@ function Test-HasWiFi {
         -Command {
         if (-not (Test-InternetOrWiFi -DriverPath $driversPath -ScriptsPath $scriptsPath)) {
             throw "Wi-Fi connection not available. Cannot continue."
+            exit 1
         } } `
         -StartMessage "Checking internet connection..." `
         -SuccessMessage "Wi-Fi connected."
@@ -575,8 +579,11 @@ function Test-InternetOrWiFi {
         Where-Object { $_.Extension -in '.exe', '.msi' }
 
         if ($ModelCode) {
-            $d = $files | Where-Object { $_.BaseName -like ("Wi-Fi-{0}*" -f $ModelCode) } |
-            Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            $d = $files | Where-Object {
+                if (-not $ModelCode) { return $false }
+                $models = ($_.BaseName -replace '^Wi-Fi-', '') -split '[_-]'
+                $models -contains $ModelCode
+            } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
             if ($d) { return [pscustomobject]@{ Driver = $d; Rule = "custom:$ModelCode"; Reason = "Found model-specific package for '$ModelCode'" } }
         }
 
@@ -633,7 +640,7 @@ function Test-InternetOrWiFi {
 
             $tmp = Join-Path $env:TEMP ("wifi-{0}.xml" -f $Ssid)
             $xml | Set-Content -Path $tmp -Encoding UTF8
-            netsh wlan add profile filename="$tmp" user=current | Out-Null
+            netsh wlan add profile filename="$tmp" user=all | Out-Null
             Remove-Item $tmp -Force -ErrorAction SilentlyContinue
         }
 
