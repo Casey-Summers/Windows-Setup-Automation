@@ -1,3 +1,4 @@
+Accessing SmBIOS:
 1. Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 2. Find-Module DellBIOSProvider
 2. Install-Module DellBIOSProvider -Force -Verbose
