@@ -222,40 +222,25 @@ function Main {
         # Applies Office 2019 key
         Invoke-Task `
             -Command {
-            $osppPath = @(
-                Join-Path $env:ProgramFiles 'Microsoft Office\Office16\ospp.vbs'
-                Join-Path ${env:ProgramFiles(x86)} 'Microsoft Office\Office16\ospp.vbs'
-            ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+                $ospp = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | ForEach-Object { Join-Path $_ 'Microsoft Office\Office16\ospp.vbs' } | Where-Object { Test-Path $_ } | Select-Object -First 1
+                if (-not $ospp) { throw "ospp.vbs not found (Office not installed yet?)" }
 
-            if (-not $osppPath) { throw "ospp.vbs not found (Office not installed yet?)." }
+                & cscript //nologo $ospp /inpkey:$env:OFFICE_PRODUCT_KEY | Out-Null
+                & cscript //nologo $ospp /act | Out-Null
 
-            & cscript.exe //nologo $osppPath /inpkey:$env:OFFICE_PRODUCT_KEY | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Failed to apply Office key (exit code $LASTEXITCODE)." }
-
-            & cscript.exe //nologo $osppPath /act | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Failed to activate Office (exit code $LASTEXITCODE)." }
-
-            $verifyText = ((& cscript.exe //nologo $osppPath /dstatus 2>$null) -join "`n")
-            if ($verifyText -notmatch 'LICENSE STATUS:\s*---LICENSED---') {
-                throw "Office did not report LICENSED after activation."
-            } } `
+                if ((& cscript //nologo $ospp /dstatus) -join "`n" -notmatch '---LICENSED---') {
+                    throw "Office reporting NOT LICENSED after activation attempt."
+                }
+            } `
             -SkipIf {
-            if ([string]::IsNullOrWhiteSpace($env:OFFICE_PRODUCT_KEY)) { return $true }
+                if ([string]::IsNullOrWhiteSpace($env:OFFICE_PRODUCT_KEY)) { return $true }
+                $ospp = @($env:ProgramFiles, ${env:ProgramFiles(x86)}) | ForEach-Object { Join-Path $_ 'Microsoft Office\Office16\ospp.vbs' } | Where-Object { Test-Path $_ } | Select-Object -First 1
+                if (-not $ospp) { return $true }
 
-            $osppPath = @(
-                Join-Path $env:ProgramFiles 'Microsoft Office\Office16\ospp.vbs'
-                Join-Path ${env:ProgramFiles(x86)} 'Microsoft Office\Office16\ospp.vbs'
-            ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
-
-            if (-not $osppPath) { return $true }
-
-            $desiredLast5 = ($env:OFFICE_PRODUCT_KEY -split '-')[-1]
-            $statusText = ((& cscript.exe //nologo $osppPath /dstatus 2>$null) -join "`n")
-
-            if ($statusText -match 'Last 5 characters of installed product key:\s*([A-Z0-9]{5})') {
-                return ($Matches[1] -eq $desiredLast5)
-            }
-            return $false } `
+                $last5 = ($env:OFFICE_PRODUCT_KEY -split '-')[-1]
+                $status = (& cscript //nologo $ospp /dstatus) -join "`n"
+                return ($status -match '---LICENSED---' -and $status -match "product key: $last5")
+            } `
             -SkipMessage "Office already licensed with expected key. Skipping." `
             -StartMessage "Checking/applying Office 2019 license..." `
             -SuccessMessage "Office 2019 license applied and verified."
@@ -337,7 +322,14 @@ function Main {
         # Elevates Overseer to Administrator
         Invoke-Task `
             -Command { Add-LocalGroupMember -Group 'Administrators' -Member $env:ADMIN_NAME } `
-            -SkipIf { Get-LocalGroupMember -Group 'Administrators' | Where-Object { $_.Name -match "\\$($env:ADMIN_NAME)$" } } `
+            -SkipIf { 
+                # Use ADSI to check member, avoids SID/Domain resolution issues like Error 1789
+                try {
+                    $group = [ADSI]"WinNT://./Administrators,group"
+                    $user = [ADSI]"WinNT://./$($env:ADMIN_NAME),user"
+                    $group.psbase.Invoke("IsMember", $user.Path)
+                } catch { $false }
+            } `
             -SkipMessage "User '$($env:ADMIN_NAME)' is already a member of the Administrators group. Skipping." `
             -StartMessage "Adding user '$($env:ADMIN_NAME)' to the Administrators group..." `
             -SuccessMessage "User '$($env:ADMIN_NAME)' successfully added to the Administrators group."
