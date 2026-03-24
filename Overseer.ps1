@@ -323,12 +323,13 @@ function Main {
         Invoke-Task `
             -Command { Add-LocalGroupMember -Group 'Administrators' -Member $env:ADMIN_NAME } `
             -SkipIf { 
-                # Use ADSI to check member, avoids SID/Domain resolution issues like Error 1789
                 try {
-                    $group = [ADSI]"WinNT://./Administrators,group"
-                    $user = [ADSI]"WinNT://./$($env:ADMIN_NAME),user"
-                    $group.psbase.Invoke("IsMember", $user.Path)
-                } catch { $false }
+                    $group = [ADSI]"WinNT://$env:COMPUTERNAME/Administrators,group"
+                    $user  = [ADSI]"WinNT://$env:COMPUTERNAME/$($env:ADMIN_NAME),user"
+                    if ($group.psbase.Invoke("IsMember", $user.AdsPath)) { return $true }
+                } catch { }
+                # Fallback to string-matching if ADSI resolution fails or misses
+                (net localgroup administrators) -match "\b$($env:ADMIN_NAME)\b"
             } `
             -SkipMessage "User '$($env:ADMIN_NAME)' is already a member of the Administrators group. Skipping." `
             -StartMessage "Adding user '$($env:ADMIN_NAME)' to the Administrators group..." `
