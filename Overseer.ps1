@@ -175,10 +175,16 @@ function Main {
     if ($env:INSTALL_APPS -eq 'true') {
 
         $installers = Get-ChildItem -Path $appsPath -File | Where-Object { $_.Extension -in '.msi', '.exe' }
+
+        # Skips NetExtender installers specifically if true
+        if ($env:DISABLE_NETEXT_INSTALL -eq 'true') {
+            Write-Warn "NetExtender install disabled in .env. Skipping NetExtender installers."
+            $installers = $installers | Where-Object { $_.Name -notlike 'NetExtender*' }
+        }
+
         if ($installers) {
             Write-Info "Application installers ($($installers.Count)): $($installers.Name -join ', ')"
 
-            # Installs each file within the 'apps' folder
             foreach ($installer in $installers) {
                 $appName = [IO.Path]::GetFileNameWithoutExtension($installer.Name)
                 $pattern = Get-AppSearchPattern -InstallerBaseName $appName
@@ -223,11 +229,12 @@ function Main {
         Invoke-Task `
             -ExePath "$officePath\setup.exe" `
             -Arguments "/configure `"$officePath\configuration-O2019BCC.xml`"" `
-            -WindowStyle Hidden `
             -SkipIf { Get-Package -Name 'Microsoft Office*' -ErrorAction SilentlyContinue } `
             -SkipMessage "Office already installed. Skipping." `
             -StartMessage "Installing Office suite..." `
             -SuccessMessage "Office Suite installer launched."
+            # -WindowStyle Hidden
+            # -Wait
 
         # Applies Office 2019 key
         Invoke-Task `
@@ -393,7 +400,7 @@ function Main {
             -StartMessage "Initialising Dell BIOS provider..." `
             -SuccessMessage "Dell BIOS provider initialised."
 
-        # Sets BIOS Admin Password (Dell – physical devices only)
+        # Sets BIOS Admin Password (Dell | physical devices only)
         Invoke-Task `
             -Command {
             if ([string]::IsNullOrWhiteSpace($env:BIOS_PASSWORD)) { throw 'BIOS_PASSWORD not set.' }
@@ -406,7 +413,7 @@ function Main {
             -StartMessage "Setting BIOS password..." `
             -SuccessMessage "BIOS password set."
 
-        # Enables Secure Boot (Dell – physical devices only)
+        # Enables Secure Boot (Dell | physical devices only)
         Invoke-Task `
             -Command {
             if ([string]::IsNullOrWhiteSpace($env:BIOS_PASSWORD)) { throw 'BIOS_PASSWORD not set.' }
@@ -811,4 +818,4 @@ function Invoke-Task {
 }
 
 
-Main 
+Main
