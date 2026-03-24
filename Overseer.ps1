@@ -25,6 +25,7 @@ function Main {
     Write-Section "Folder Structure"
     Write-Ok "Root: $ROOT"
     $script:logsPath = Assert-Folder "logs"
+    Cleanup-Logs
     $script:scriptsPath = Assert-Folder "scripts"
     $script:installersPath = Assert-Folder "installers"
     $appsPath = Assert-Folder "installers/apps"
@@ -445,6 +446,23 @@ function Write-LogLine {
         $script:OverseerLogFile = Join-Path $script:logsPath ("Overseer_{0}.txt" -f (Get-Date -Format 'dd-MM-yyyy_HH-mm-ss'))
     }
     Add-Content -Path $script:OverseerLogFile -Value $Text -Encoding UTF8
+}
+
+function Cleanup-Logs {
+    if (-not $script:logsPath -or -not (Test-Path $script:logsPath)) { return }
+
+    # Get all logs, sorted oldest to newest
+    $files = Get-ChildItem -Path $script:logsPath -File -Filter "Overseer_*.txt" | Sort-Object LastWriteTime
+    if ($files.Count -le 21) { return }
+
+    # Identify the files we must keep: the very first one (oldest) and the last 20 (newest)
+    $keepers = @($files[0].FullName)
+    $files | Select-Object -Last 20 | ForEach-Object { $keepers += $_.FullName }
+
+    # Purge everything that isn't a keeper
+    $files | Where-Object { $_.FullName -notin $keepers } | ForEach-Object {
+        Remove-Item $_.FullName -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Write-Err {
