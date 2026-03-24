@@ -176,8 +176,8 @@ function Main {
 
         $installers = Get-ChildItem -Path $appsPath -File | Where-Object { $_.Extension -in '.msi', '.exe' }
 
-        # Skips NetExtender installers specifically if true
-        if ($env:DISABLE_NETEXT_INSTALL -eq 'true') {
+        # Skips NetExtender installers specifically if false
+        if ($env:INSTALL_NETEXT -eq 'false') {
             Write-Warn "NetExtender install disabled in .env. Skipping NetExtender installers."
             $installers = $installers | Where-Object { $_.Name -notlike 'NetExtender*' }
         }
@@ -207,23 +207,6 @@ function Main {
 
     Write-Section "Office Suite"
     if ($env:INSTALL_OFFICE_SUITE -eq 'true') {
-
-        # Assigns Education license unless already present
-        Invoke-Task `
-            -ExePath "$env:SystemRoot\System32\changepk.exe" `
-            -Arguments "/ProductKey $($env:WINDOWS_PRODUCT_KEY)" `
-            -SkipIf {
-            if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PRODUCT_KEY)) { return $true }
-            $cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
-            $editionText = @($cv.EditionID, $cv.CompositionEditionID, $cv.ProductName) -join ' '
-            $isEdu = ($editionText -match 'Education')
-            $lic = Get-CimInstance SoftwareLicensingProduct -Filter "ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL" -ErrorAction SilentlyContinue |
-            Select-Object -First 1 LicenseStatus
-            $isActivated = ($lic.LicenseStatus -eq 1)
-            return ($isEdu -and $isActivated) } `
-            -SkipMessage "Windows is already Education and activated. Skipping." `
-            -StartMessage "Applying Windows Education product key..." `
-            -SuccessMessage "Product key applied successfully."
 
         # Installs Office 2019 Suite
         Invoke-Task `
@@ -284,6 +267,23 @@ function Main {
     Write-Section "Provisioning"
     if ($env:PROVISION_CUSTOMISATION -eq 'true') {
         
+        # Assigns Education license unless already present
+        Invoke-Task `
+            -ExePath "$env:SystemRoot\System32\changepk.exe" `
+            -Arguments "/ProductKey $($env:WINDOWS_PRODUCT_KEY)" `
+            -SkipIf {
+            if ([string]::IsNullOrWhiteSpace($env:WINDOWS_PRODUCT_KEY)) { return $true }
+            $cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction SilentlyContinue
+            $editionText = @($cv.EditionID, $cv.CompositionEditionID, $cv.ProductName) -join ' '
+            $isEdu = ($editionText -match 'Education')
+            $lic = Get-CimInstance SoftwareLicensingProduct -Filter "ApplicationID='55c92734-d682-4d71-983e-d6ec3f16059f' AND PartialProductKey IS NOT NULL" -ErrorAction SilentlyContinue |
+            Select-Object -First 1 LicenseStatus
+            $isActivated = ($lic.LicenseStatus -eq 1)
+            return ($isEdu -and $isActivated) } `
+            -SkipMessage "Windows is already Education and activated. Skipping." `
+            -StartMessage "Applying Windows Education product key..." `
+            -SuccessMessage "Product key applied successfully."
+
         # Sets timezone and syncs system time
         Invoke-Task `
             -Command {
@@ -321,7 +321,7 @@ function Main {
             if (-not ($langs.LanguageTag -contains 'en-AU')) { $langs.Add((New-WinUserLanguageList 'en-AU')[0]) }
             # Remove en-US
             $langs = $langs | Where-Object LanguageTag -ne 'en-US'
-            Set-WinUserLanguageList $langs -Force
+            Set-WinUserLanguageList $langs -Force -WarningAction SilentlyContinue
             # Set system defaults for all future users
             Set-WinSystemLocale en-AU
             Set-WinDefaultInputMethodOverride -InputTip '0c09:00000409'
@@ -530,12 +530,17 @@ function Test-IsOverseer {
 function Test-HasWiFi {
     Invoke-Task `
         -Command {
-        if (-not (Test-InternetOrWiFi -DriverPath $driversPath -ScriptsPath $scriptsPath)) {
+        if (-not (Test-InternetOrWiFi -DriverPath $script:driversPath -ScriptsPath $script:scriptsPath)) {
             throw "Wi-Fi connection not available. Cannot continue."
-            exit 1
         } } `
         -StartMessage "Checking internet connection..." `
         -SuccessMessage "Wi-Fi connected."
+
+    if (-not (Test-InternetOrWiFi -DriverPath $script:driversPath -ScriptsPath $script:scriptsPath)) {
+        Write-Err "No internet connection detected. Forcing script stop."
+        Read-Host "Press enter to exit"
+        exit 1
+    }
 }
 
 function Test-InternetOrWiFi {
